@@ -11,7 +11,14 @@ CREATE TABLE IF NOT EXISTS students (
   grade INTEGER NOT NULL DEFAULT 3,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
+CREATE TABLE IF NOT EXISTS learning_sessions (
+  id TEXT PRIMARY KEY,
+  student_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ended_at TEXT,
+  summary_json TEXT
+);
 CREATE TABLE IF NOT EXISTS skill_progress (
   student_id INTEGER NOT NULL,
   skill_id TEXT NOT NULL,
@@ -22,7 +29,6 @@ CREATE TABLE IF NOT EXISTS skill_progress (
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (student_id, skill_id)
 );
-
 CREATE TABLE IF NOT EXISTS attempts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   student_id INTEGER NOT NULL,
@@ -33,12 +39,13 @@ CREATE TABLE IF NOT EXISTS attempts (
   error_type TEXT,
   feedback TEXT,
   worksheet_id TEXT,
+  session_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
 CREATE TABLE IF NOT EXISTS worksheets (
   id TEXT PRIMARY KEY,
   student_id INTEGER NOT NULL,
+  session_id TEXT,
   questions_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'created',
   image_path TEXT,
@@ -49,27 +56,25 @@ CREATE TABLE IF NOT EXISTS worksheets (
 );
 """
 
-
 def connect():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
 
+def _ensure_column(conn, table: str, column: str, definition: str):
+    columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
-        columns = {row[1] for row in conn.execute("PRAGMA table_info(attempts)").fetchall()}
-        if "worksheet_id" not in columns:
-            conn.execute("ALTER TABLE attempts ADD COLUMN worksheet_id TEXT")
-
-        worksheet_columns = {row[1] for row in conn.execute("PRAGMA table_info(worksheets)").fetchall()}
-        if "processed_image_path" not in worksheet_columns:
-            conn.execute("ALTER TABLE worksheets ADD COLUMN processed_image_path TEXT")
-        if "vision_json" not in worksheet_columns:
-            conn.execute("ALTER TABLE worksheets ADD COLUMN vision_json TEXT")
-
+        _ensure_column(conn, "attempts", "worksheet_id", "TEXT")
+        _ensure_column(conn, "attempts", "session_id", "TEXT")
+        _ensure_column(conn, "worksheets", "processed_image_path", "TEXT")
+        _ensure_column(conn, "worksheets", "vision_json", "TEXT")
+        _ensure_column(conn, "worksheets", "session_id", "TEXT")
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):
     with connect() as conn:
