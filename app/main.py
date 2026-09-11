@@ -12,6 +12,7 @@ from app.assessment.diagnosis import feedback_for
 from app.assessment.generator import generate_questions
 from app.assessment.grader import grade
 from app.auth.service import authenticate, create_login_session, create_user, destroy_login_session, user_from_session
+from app.chat.service import list_messages, save_message, teacher_chat_answer
 from app.classroom.service import bootstrap_legacy_students, create_classroom, get_classroom_for_user, list_classrooms
 from app.curriculum.grade3_math import SKILLS
 from app.curriculum.roadmap import current_skill_for_student, roadmap_for_student
@@ -47,7 +48,7 @@ COOKIE_SECURE = os.getenv("AI_TEACHER_COOKIE_SECURE", "false").lower() == "true"
 PUBLIC_PATHS = {
     "/", "/login", "/register", "/teacher/login", "/teacher/register", "/healthz",
     "/student/login", "/student/logout", "/learn", "/learn/start", "/learn/practice",
-    "/learn/submit", "/learn/finish",
+    "/learn/chat", "/learn/submit", "/learn/finish",
 }
 
 
@@ -110,6 +111,8 @@ def require_student_session(request: Request, session_id: str):
 
 def learning_context(request: Request, student: dict, session: dict, questions=None, student_mode: bool = False):
     plan = learning_plan_for_student(student["id"])
+    snapshot = teacher_snapshot(plan["skill_id"], plan["progress"])
+    active_questions = questions if questions is not None else SESSIONS.get(session["id"], [])
     return {
         "request": request,
         "user": None if student_mode else current_user(request),
@@ -118,8 +121,9 @@ def learning_context(request: Request, student: dict, session: dict, questions=N
         "plan": plan,
         "skill_id": plan["skill_id"],
         "skill": plan["skill"],
-        "snapshot": teacher_snapshot(plan["skill_id"], plan["progress"]),
-        "questions": questions if questions is not None else SESSIONS.get(session["id"], []),
+        "snapshot": snapshot,
+        "questions": active_questions,
+        "chat_messages": list_messages(session["id"]),
         "vision_enabled": vision_enabled(),
         "student_mode": student_mode,
     }
@@ -297,6 +301,36 @@ def student_practice(request: Request, session_id: str = Form(...)):
     count = 3 if plan["mode"] == "review" else 5
     SESSIONS[session_id] = generate_questions(count, plan["skill_id"])
     return templates.TemplateResponse("index.html", learning_context(request, student, session, SESSIONS[session_id], student_mode=True))
+
+
+@app.post("/learn/chat")
+def student_teacher_chat(request: Request, session_id: str = Form(...), message: str = Form(...)):
+    student, session = require_student_session(request, session_id)
+    question = message.strip()
+    if not question:
+        raise HTTPException(400, "请输入问题")
+    if len(question) > 500:
+        raise HTTPException(400, "问题太长了，请简短一些")
+
+    plan = learning_plan_for_student(student["id"])
+    snapshot = teacher_snapshot(plan["skill_id"], plan["progress"])
+    active_questions = SESSIONS.get(session_id, [])
+    history = list_messages(session_id, limit=12)
+    student_message = save_message(session_id, student["id"], "student", question)
+    answer = teacher_chat_answer(
+        question=question,
+        student=student,
+        skill=plan["skill"],
+        progress=plan["progress"],
+        lesson=snapshot.get("lesson"),
+        teaching_mode=snapshot.get("teaching_mode", "practice_only"),
+        strategy=snapshot.get("strategy", {}),
+        history=history + [student_message],
+        practice_mode=bool(active_questions),
+        active_questions=active_questions,
+    )
+    teacher_message = save_message(session_id, student["id"], "teacher", answer)
+    return JSONResponse({"answer": answer, "message": teacher_message, "practice_mode": bool(active_questions)})
 
 
 @app.post("/learn/finish")
