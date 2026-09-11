@@ -1,4 +1,15 @@
+import secrets
+import string
+
 from app.db.sqlite import connect
+
+
+def _generate_class_code(conn) -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    while True:
+        code = "".join(secrets.choice(alphabet) for _ in range(6))
+        if not conn.execute("SELECT 1 FROM classrooms WHERE class_code=?", (code,)).fetchone():
+            return code
 
 
 def create_classroom(owner_user_id: int, name: str, grade: int) -> dict:
@@ -8,9 +19,10 @@ def create_classroom(owner_user_id: int, name: str, grade: int) -> dict:
     if grade < 1 or grade > 12:
         raise ValueError("年级必须在 1 到 12 之间")
     with connect() as conn:
+        class_code = _generate_class_code(conn)
         cur = conn.execute(
-            "INSERT INTO classrooms(name,grade,owner_user_id) VALUES (?,?,?)",
-            (name, grade, owner_user_id),
+            "INSERT INTO classrooms(name,grade,owner_user_id,class_code) VALUES (?,?,?,?)",
+            (name, grade, owner_user_id, class_code),
         )
         row = conn.execute("SELECT * FROM classrooms WHERE id=?", (cur.lastrowid,)).fetchone()
     return dict(row)
@@ -52,8 +64,8 @@ def bootstrap_legacy_students(user_id: int) -> dict | None:
         if user_count != 1 or orphan_count == 0:
             return None
         cur = conn.execute(
-            "INSERT INTO classrooms(name,grade,owner_user_id) VALUES ('历史学生',3,?)",
-            (user_id,),
+            "INSERT INTO classrooms(name,grade,owner_user_id,class_code) VALUES ('历史学生',3,?,?)",
+            (user_id, _generate_class_code(conn)),
         )
         classroom_id = cur.lastrowid
         conn.execute("UPDATE students SET classroom_id=? WHERE classroom_id IS NULL", (classroom_id,))
