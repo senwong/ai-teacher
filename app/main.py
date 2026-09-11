@@ -10,7 +10,8 @@ from app.agent.teacher import teacher_snapshot
 from app.assessment.diagnosis import feedback_for
 from app.assessment.generator import generate_questions
 from app.assessment.grader import grade
-from app.curriculum.grade3_math import DEFAULT_SKILL_ID
+from app.curriculum.grade3_math import SKILLS
+from app.curriculum.roadmap import current_skill_for_student, roadmap_for_student
 from app.db.sqlite import connect, init_db
 from app.session.service import create_session, finish_session, get_session, list_sessions
 from app.student.model import get_progress, update_progress
@@ -41,8 +42,18 @@ def require_session(student_id: int, session_id: str):
     return session
 
 def learning_context(request: Request, student: dict, session: dict, questions=None):
-    progress = get_progress(student["id"], DEFAULT_SKILL_ID)
-    return {"request": request, "student": student, "session": session, "snapshot": teacher_snapshot(DEFAULT_SKILL_ID, progress), "questions": questions if questions is not None else SESSIONS.get(session["id"], []), "vision_enabled": vision_enabled()}
+    skill_id = current_skill_for_student(student["id"])
+    progress = get_progress(student["id"], skill_id)
+    return {
+        "request": request,
+        "student": student,
+        "session": session,
+        "skill_id": skill_id,
+        "skill": SKILLS[skill_id],
+        "snapshot": teacher_snapshot(skill_id, progress),
+        "questions": questions if questions is not None else SESSIONS.get(session["id"], []),
+        "vision_enabled": vision_enabled(),
+    }
 
 @app.get("/")
 def root(): return RedirectResponse("/students", status_code=303)
@@ -62,7 +73,18 @@ def create_student_route(request: Request, name: str = Form(...), grade: int = F
 @app.get("/students/{student_id}", response_class=HTMLResponse)
 def student_detail(request: Request, student_id: int):
     student = require_student(student_id)
-    return templates.TemplateResponse("student_detail.html", {"request": request, "student": student, "stats": student_stats(student_id), "sessions": list_sessions(student_id), "progress": get_progress(student_id, DEFAULT_SKILL_ID)})
+    roadmap = roadmap_for_student(student_id)
+    current_skill_id = current_skill_for_student(student_id)
+    return templates.TemplateResponse("student_detail.html", {
+        "request": request,
+        "student": student,
+        "stats": student_stats(student_id),
+        "sessions": list_sessions(student_id),
+        "roadmap": roadmap,
+        "current_skill": SKILLS[current_skill_id],
+        "current_skill_id": current_skill_id,
+        "progress": get_progress(student_id, current_skill_id),
+    })
 
 @app.post("/students/{student_id}/sessions")
 def start_session(student_id: int):
@@ -82,13 +104,15 @@ def finish_learning(student_id: int, session_id: str):
 @app.post("/students/{student_id}/sessions/{session_id}/practice", response_class=HTMLResponse)
 def practice(request: Request, student_id: int, session_id: str):
     student = require_student(student_id); session = require_session(student_id, session_id)
-    SESSIONS[session_id] = generate_questions(5)
+    skill_id = current_skill_for_student(student_id)
+    SESSIONS[session_id] = generate_questions(5, skill_id)
     return templates.TemplateResponse("index.html", learning_context(request, student, session, SESSIONS[session_id]))
 
 @app.post("/students/{student_id}/sessions/{session_id}/worksheet", response_class=HTMLResponse)
 def worksheet(request: Request, student_id: int, session_id: str):
     student = require_student(student_id); session = require_session(student_id, session_id)
-    item = create_worksheet(student_id, generate_questions(5), session_id)
+    skill_id = current_skill_for_student(student_id)
+    item = create_worksheet(student_id, generate_questions(5, skill_id), session_id)
     render_worksheet_pdf(item, pdf_path(item["id"]))
     return templates.TemplateResponse("worksheet.html", {"request": request, "student": student, "session": session, "worksheet": item, "vision_enabled": vision_enabled()})
 
@@ -151,14 +175,18 @@ async def grade_worksheet(request: Request, worksheet_id: str):
     item=get_worksheet(worksheet_id)
     if not item: raise HTTPException(404,"Worksheet not found")
     student=require_student(item["student_id"]); session=get_session(item.get("session_id")) if item.get("session_id") else None; form=await request.form(); answers={q["id"]:str(form.get(q["id"],"")) for q in item["questions"]}
-    results=grade_answers(student,item["questions"],answers,worksheet_id,item.get("session_id")); mark_worksheet(worksheet_id,"graded"); progress=get_progress(student["id"],DEFAULT_SKILL_ID)
-    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(DEFAULT_SKILL_ID,progress),"results":results,"worksheet_id":worksheet_id})
+    results=grade_answers(student,item["questions"],answers,worksheet_id,item.get("session_id")); mark_worksheet(worksheet_id,"graded")
+    skill_id=current_skill_for_student(student["id"]); progress=get_progress(student["id"],skill_id)
+    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(skill_id,progress),"results":results,"worksheet_id":worksheet_id})
 
 @app.post("/students/{student_id}/sessions/{session_id}/submit", response_class=HTMLResponse)
 async def submit(request: Request, student_id: int, session_id: str):
-    student=require_student(student_id); session=require_session(student_id,session_id); questions=SESSIONS.get(session_id,[]); form=await request.form(); answers={q["id"]:str(form.get(q["id"],"")) for q in questions}; results=grade_answers(student,questions,answers,session_id=session_id); SESSIONS[session_id]=[]; progress=get_progress(student_id,DEFAULT_SKILL_ID)
-    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(DEFAULT_SKILL_ID,progress),"results":results})
+    student=require_student(student_id); session=require_session(student_id,session_id); questions=SESSIONS.get(session_id,[]); form=await request.form(); answers={q["id"]:str(form.get(q["id"],"")) for q in questions}; results=grade_answers(student,questions,answers,session_id=session_id); SESSIONS[session_id]=[]
+    skill_id=current_skill_for_student(student_id); progress=get_progress(student_id,skill_id)
+    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(skill_id,progress),"results":results})
 
 @app.get("/api/students/{student_id}")
 def api_student(student_id: int):
-    student=require_student(student_id); return {"student":student,"progress":get_progress(student_id,DEFAULT_SKILL_ID),"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
+    student=require_student(student_id)
+    skill_id=current_skill_for_student(student_id)
+    return {"student":student,"current_skill":skill_id,"progress":get_progress(student_id,skill_id),"roadmap":roadmap_for_student(student_id),"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
