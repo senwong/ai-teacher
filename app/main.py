@@ -33,6 +33,7 @@ from app.student.model import get_progress, update_progress
 from app.student.service import create_student, get_student_for_user, list_students, reset_student_pin, student_stats
 from app.vision.preprocess import prepare_answer_sheet
 from app.vision.reader import extract_submission, vision_enabled
+from app.websocket_chat import register_websocket_chat
 from app.worksheet.pdf import render_worksheet_pdf
 from app.worksheet.service import create_worksheet, get_worksheet, incoming_upload_path, mark_worksheet, pdf_path, save_vision_result, upload_path
 
@@ -50,6 +51,8 @@ PUBLIC_PATHS = {
     "/student/login", "/student/logout", "/learn", "/learn/start", "/learn/practice",
     "/learn/chat", "/learn/submit", "/learn/finish",
 }
+
+register_websocket_chat(app, SESSIONS, STUDENT_COOKIE_NAME)
 
 
 @app.on_event("startup")
