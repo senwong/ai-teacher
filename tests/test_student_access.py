@@ -130,6 +130,37 @@ def test_qr_join_page_only_requires_pin_and_logs_student_in():
         assert STUDENT_COOKIE_NAME in response.cookies
 
 
+def test_teacher_can_reopen_login_card_without_changing_pin_hash():
+    with tempfile.TemporaryDirectory() as tmp:
+        _reset_db(tmp)
+
+        from fastapi.testclient import TestClient
+        from app.auth.service import create_login_session, create_user
+        from app.classroom.service import create_classroom
+        from app.db.sqlite import connect
+        from app.main import app, COOKIE_NAME
+        from app.student.service import create_student
+
+        teacher = create_user("老师", "teacher@example.com", "password123")
+        classroom = create_classroom(teacher["id"], "三年级一班", 3)
+        student = create_student("小明", 3, classroom["id"])
+
+        with connect() as conn:
+            before = conn.execute("SELECT pin_hash FROM students WHERE id=?", (student["id"],)).fetchone()["pin_hash"]
+
+        client = TestClient(app)
+        client.cookies.set(COOKIE_NAME, create_login_session(teacher["id"]))
+        response = client.get(f"/students/{student['id']}/login-card")
+        assert response.status_code == 200
+        assert "长期有效" in response.text
+        assert "••••" in response.text
+        assert student["initial_pin"] not in response.text
+
+        with connect() as conn:
+            after = conn.execute("SELECT pin_hash FROM students WHERE id=?", (student["id"],)).fetchone()["pin_hash"]
+        assert after == before
+
+
 def test_teacher_learning_session_routes_are_removed():
     from app.main import app
 
@@ -140,6 +171,7 @@ def test_teacher_learning_session_routes_are_removed():
     assert "/students/{student_id}/sessions/{session_id}/submit" not in paths
     assert "/students/{student_id}/sessions/{session_id}/finish" not in paths
     assert "/students/{student_id}/sessions/{session_id}/worksheet" not in paths
+    assert "/students/{student_id}/login-card" in paths
     assert "/learn/start" in paths
     assert "/learn/practice" in paths
     assert "/learn/submit" in paths
