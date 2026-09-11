@@ -19,7 +19,15 @@ from app.db.sqlite import connect, init_db
 from app.diagnostic.service import complete_diagnostic, create_diagnostic, get_diagnostic, latest_diagnostic
 from app.review.service import learning_plan_for_student, review_queue
 from app.session.service import create_session, finish_session, get_session, list_sessions
-from app.student.access import authenticate_student, create_student_session, destroy_student_session, student_from_session
+from app.student.access import (
+    authenticate_student,
+    authenticate_student_by_login_code,
+    create_student_session,
+    destroy_student_session,
+    qr_data_uri,
+    student_by_login_code,
+    student_from_session,
+)
 from app.student.model import get_progress, update_progress
 from app.student.service import create_student, get_student_for_user, list_students, reset_student_pin, student_stats
 from app.vision.preprocess import prepare_answer_sheet
@@ -51,7 +59,7 @@ def startup():
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/static/") or path in PUBLIC_PATHS:
+    if path.startswith("/static/") or path.startswith("/student/join/") or path in PUBLIC_PATHS:
         return await call_next(request)
     user = user_from_session(request.cookies.get(COOKIE_NAME))
     request.state.user = user
@@ -92,14 +100,6 @@ def require_student(request: Request, student_id: int) -> dict:
     return student
 
 
-def require_session(request: Request, student_id: int, session_id: str):
-    require_student(request, student_id)
-    session = get_session(session_id)
-    if not session or session["student_id"] != student_id:
-        raise HTTPException(404, "Learning session not found")
-    return session
-
-
 def require_student_session(request: Request, session_id: str):
     student = current_student(request)
     session = get_session(session_id)
@@ -122,6 +122,19 @@ def learning_context(request: Request, student: dict, session: dict, questions=N
         "questions": questions if questions is not None else SESSIONS.get(session["id"], []),
         "vision_enabled": vision_enabled(),
         "student_mode": student_mode,
+    }
+
+
+def login_card_context(request: Request, classroom: dict, student: dict, pin: str) -> dict:
+    login_url = str(request.url_for("student_join_page", login_code=student["login_code"]))
+    return {
+        "request": request,
+        "user": current_user(request),
+        "classroom": classroom,
+        "student": student,
+        "pin": pin,
+        "login_url": login_url,
+        "qr_data_uri": qr_data_uri(login_url),
     }
 
 
@@ -215,6 +228,30 @@ def student_login(request: Request, class_code: str = Form(...), name: str = For
     student = authenticate_student(class_code, name, pin)
     if not student:
         return templates.TemplateResponse("student_login.html", {"request": request, "error": "班级码、姓名或 PIN 不正确"}, status_code=400)
+    token = create_student_session(student["id"])
+    response = RedirectResponse("/learn", status_code=303)
+    set_student_cookie(response, token)
+    return response
+
+
+@app.get("/student/join/{login_code}", response_class=HTMLResponse, name="student_join_page")
+def student_join_page(request: Request, login_code: str):
+    if student_from_session(request.cookies.get(STUDENT_COOKIE_NAME)):
+        return RedirectResponse("/learn", status_code=303)
+    student = student_by_login_code(login_code)
+    if not student:
+        raise HTTPException(404, "学生登录链接无效")
+    return templates.TemplateResponse("student_join.html", {"request": request, "student": student, "login_code": login_code, "error": None})
+
+
+@app.post("/student/join/{login_code}", response_class=HTMLResponse)
+def student_join(request: Request, login_code: str, pin: str = Form(...)):
+    student = authenticate_student_by_login_code(login_code, pin)
+    if not student:
+        found = student_by_login_code(login_code)
+        if not found:
+            raise HTTPException(404, "学生登录链接无效")
+        return templates.TemplateResponse("student_join.html", {"request": request, "student": found, "login_code": login_code, "error": "PIN 不正确"}, status_code=400)
     token = create_student_session(student["id"])
     response = RedirectResponse("/learn", status_code=303)
     set_student_cookie(response, token)
@@ -315,7 +352,7 @@ def create_student_route(request: Request, classroom_id: int, name: str = Form(.
         student = create_student(name, grade, classroom_id)
     except ValueError as exc:
         return templates.TemplateResponse("student_new.html", {"request": request, "user": current_user(request), "classroom": classroom, "error": str(exc)}, status_code=400)
-    return templates.TemplateResponse("student_created.html", {"request": request, "user": current_user(request), "classroom": classroom, "student": student, "pin": student["initial_pin"]})
+    return templates.TemplateResponse("student_created.html", login_card_context(request, classroom, student, student["initial_pin"]))
 
 
 @app.post("/students/{student_id}/reset-pin", response_class=HTMLResponse)
@@ -323,7 +360,7 @@ def reset_student_pin_route(request: Request, student_id: int):
     student = require_student(request, student_id)
     classroom = require_classroom(request, student["classroom_id"])
     pin = reset_student_pin(student_id)
-    return templates.TemplateResponse("student_created.html", {"request": request, "user": current_user(request), "classroom": classroom, "student": student, "pin": pin})
+    return templates.TemplateResponse("student_created.html", login_card_context(request, classroom, student, pin))
 
 
 @app.get("/students/{student_id}", response_class=HTMLResponse)
@@ -367,49 +404,6 @@ async def submit_diagnostic(request: Request, student_id: int, assessment_id: st
     answers = {q["id"]: str(form.get(q["id"], "")) for q in assessment["questions"]}
     completed = complete_diagnostic(assessment_id, answers)
     return templates.TemplateResponse("diagnostic_result.html", {"request": request, "student": student, "assessment": completed})
-
-
-@app.post("/students/{student_id}/sessions")
-def start_session(request: Request, student_id: int):
-    require_student(request, student_id)
-    session = create_session(student_id)
-    return RedirectResponse(f"/students/{student_id}/sessions/{session['id']}", status_code=303)
-
-
-@app.get("/students/{student_id}/sessions/{session_id}", response_class=HTMLResponse)
-def learning_home(request: Request, student_id: int, session_id: str):
-    student = require_student(request, student_id)
-    session = require_session(request, student_id, session_id)
-    return templates.TemplateResponse("index.html", learning_context(request, student, session))
-
-
-@app.post("/students/{student_id}/sessions/{session_id}/finish")
-def finish_learning(request: Request, student_id: int, session_id: str):
-    require_session(request, student_id, session_id)
-    finish_session(session_id)
-    SESSIONS.pop(session_id, None)
-    return RedirectResponse(f"/students/{student_id}", status_code=303)
-
-
-@app.post("/students/{student_id}/sessions/{session_id}/practice", response_class=HTMLResponse)
-def practice(request: Request, student_id: int, session_id: str):
-    student = require_student(request, student_id)
-    session = require_session(request, student_id, session_id)
-    plan = learning_plan_for_student(student_id)
-    count = 3 if plan["mode"] == "review" else 5
-    SESSIONS[session_id] = generate_questions(count, plan["skill_id"])
-    return templates.TemplateResponse("index.html", learning_context(request, student, session, SESSIONS[session_id]))
-
-
-@app.post("/students/{student_id}/sessions/{session_id}/worksheet", response_class=HTMLResponse)
-def worksheet(request: Request, student_id: int, session_id: str):
-    student = require_student(request, student_id)
-    session = require_session(request, student_id, session_id)
-    plan = learning_plan_for_student(student_id)
-    count = 3 if plan["mode"] == "review" else 5
-    item = create_worksheet(student_id, generate_questions(count, plan["skill_id"]), session_id)
-    render_worksheet_pdf(item, pdf_path(item["id"]))
-    return templates.TemplateResponse("worksheet.html", {"request": request, "student": student, "session": session, "worksheet": item, "vision_enabled": vision_enabled()})
 
 
 def require_worksheet(request: Request, worksheet_id: str) -> dict:
@@ -529,18 +523,6 @@ async def grade_worksheet(request: Request, worksheet_id: str):
     results = grade_answers(student, item["questions"], answers, worksheet_id, item.get("session_id"))
     mark_worksheet(worksheet_id, "graded")
     return templates.TemplateResponse("results.html", result_context(request, student, session, results, worksheet_id))
-
-
-@app.post("/students/{student_id}/sessions/{session_id}/submit", response_class=HTMLResponse)
-async def submit(request: Request, student_id: int, session_id: str):
-    student = require_student(request, student_id)
-    session = require_session(request, student_id, session_id)
-    questions = SESSIONS.get(session_id, [])
-    form = await request.form()
-    answers = {q["id"]: str(form.get(q["id"], "")) for q in questions}
-    results = grade_answers(student, questions, answers, session_id=session_id)
-    SESSIONS[session_id] = []
-    return templates.TemplateResponse("results.html", result_context(request, student, session, results))
 
 
 @app.get("/api/students/{student_id}")

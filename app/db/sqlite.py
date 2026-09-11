@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS students (
   name TEXT NOT NULL,
   grade INTEGER NOT NULL DEFAULT 3,
   pin_hash TEXT,
+  login_code TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS student_auth_sessions (
@@ -124,12 +125,20 @@ def _new_class_code(conn) -> str:
             return code
 
 
+def _new_student_login_code(conn) -> str:
+    while True:
+        code = secrets.token_urlsafe(12)
+        if not conn.execute("SELECT 1 FROM students WHERE login_code=?", (code,)).fetchone():
+            return code
+
+
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
         _ensure_column(conn, "classrooms", "class_code", "TEXT")
         _ensure_column(conn, "students", "classroom_id", "INTEGER")
         _ensure_column(conn, "students", "pin_hash", "TEXT")
+        _ensure_column(conn, "students", "login_code", "TEXT")
         _ensure_column(conn, "learning_sessions", "lesson_skill_id", "TEXT")
         _ensure_column(conn, "attempts", "worksheet_id", "TEXT")
         _ensure_column(conn, "attempts", "session_id", "TEXT")
@@ -138,7 +147,10 @@ def init_db():
         _ensure_column(conn, "worksheets", "session_id", "TEXT")
         for row in conn.execute("SELECT id FROM classrooms WHERE class_code IS NULL OR class_code='' ").fetchall():
             conn.execute("UPDATE classrooms SET class_code=? WHERE id=?", (_new_class_code(conn), row["id"]))
+        for row in conn.execute("SELECT id FROM students WHERE login_code IS NULL OR login_code='' ").fetchall():
+            conn.execute("UPDATE students SET login_code=? WHERE id=?", (_new_student_login_code(conn), row["id"]))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_classrooms_code ON classrooms(class_code)")
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_students_login_code ON students(login_code)")
 
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):
@@ -146,5 +158,5 @@ def get_or_create_student(name: str = "Demo Student", grade: int = 3):
         row = conn.execute("SELECT * FROM students WHERE name = ? LIMIT 1", (name,)).fetchone()
         if row:
             return dict(row)
-        cur = conn.execute("INSERT INTO students(name, grade) VALUES (?, ?)", (name, grade))
+        cur = conn.execute("INSERT INTO students(name, grade, login_code) VALUES (?, ?, ?)", (name, grade, _new_student_login_code(conn)))
         return dict(conn.execute("SELECT * FROM students WHERE id = ?", (cur.lastrowid,)).fetchone())
