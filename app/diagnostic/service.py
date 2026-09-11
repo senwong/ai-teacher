@@ -1,18 +1,17 @@
 import json
-import math
 import uuid
 from collections import defaultdict
 
 from app.assessment.generator import generate_questions
 from app.assessment.grader import grade
-from app.curriculum.grade3_math import SKILL_ORDER, SKILLS
+from app.curriculum.grade3_math import ROADMAP, SKILLS
 from app.db.sqlite import connect
 
 
 def create_diagnostic(student_id: int, questions_per_skill: int = 2) -> dict:
     questions = []
     index = 1
-    for skill_id in SKILL_ORDER:
+    for skill_id in ROADMAP:
         for question in generate_questions(questions_per_skill, skill_id):
             item = dict(question)
             item["id"] = f"d{index}"
@@ -90,7 +89,7 @@ def complete_diagnostic(assessment_id: str, answers: dict[str, str]) -> dict:
         })
 
     skill_results = []
-    for skill_id in SKILL_ORDER:
+    for skill_id in ROADMAP:
         bucket = grouped[skill_id]
         mastery = bucket["correct"] / bucket["total"] if bucket["total"] else 0.0
         passed = mastery >= SKILLS[skill_id]["mastery_threshold"]
@@ -105,7 +104,7 @@ def complete_diagnostic(assessment_id: str, answers: dict[str, str]) -> dict:
             "items": bucket["items"],
         })
 
-    recommended_skill_id = SKILL_ORDER[-1]
+    recommended_skill_id = ROADMAP[-1]
     for item in skill_results:
         if not item["passed"]:
             recommended_skill_id = item["skill_id"]
