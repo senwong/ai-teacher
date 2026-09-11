@@ -1,24 +1,37 @@
 # AI Teacher MVP
 
-一个最小可运行的「AI 老师」教学闭环：**讲解 → 出题 → 纸笔作答 → 拍照 → 确认识别 → 批改 → 错误诊断 → 更新掌握度 → 决定下一教学动作**。
+面向纸笔学习场景的 AI Teacher 原型。
 
-当前聚焦小学三年级数学「两位数乘一位数」。V1 已加入真实纸笔练习链路。
+当前已实现：
 
-## V1 已完成
+- 多学生管理：学生列表、新增学生、学生详情
+- 每个学生独立的掌握度、答题记录和试卷
+- Learning Session：每次学习都有独立 session_id、开始/结束时间和统计
+- 三年级数学练习、规则批改、错误诊断、Teacher 状态机
+- A4 PDF 试卷 + worksheet_id + QR Code
+- 答卷照片二维码识别、透视矫正
+- 可选 Vision：读取最终答案和书写步骤
+- 人工确认后再更新 Student Model
 
-- FastAPI + SQLite + 零构建 Web UI
-- 生成 5 道数学题
-- 为每份试卷生成唯一 `worksheet_id`
-- ReportLab 生成 A4 PDF
-- PDF 内含二维码，可用于后续相机自动关联试卷
-- 上传 JPG / PNG / WEBP 答卷照片
-- 配置 `OPENAI_API_KEY` 后调用 Vision 模型提取每题最终答案
-- Vision 结果先让学生/家长确认，再进入批改，避免识别错误污染学习数据
-- 未配置 Vision 时自动降级为人工录入答案
-- 复用原有 grader、错误分类、Student Model、Teacher State Machine
-- `attempts` 记录可关联 `worksheet_id`
+## 数据链路
 
-## 快速开始
+```text
+Student
+  ↓
+Learning Session
+  ↓
+Teacher Agent
+  ↓
+Worksheet / Screen Practice
+  ↓
+Attempt
+  ↓
+Student Model / Mastery
+```
+
+Worksheet 同时保存 `student_id` 和 `session_id`，因此摄像头只要识别二维码，就能自动关联到对应学生和学习过程。
+
+## 运行
 
 ```bash
 python3 -m venv .venv
@@ -27,55 +40,23 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-打开 http://127.0.0.1:8000
+打开 http://127.0.0.1:8000 ，首页会进入学生管理。
 
-如需 Vision：
+## Vision（可选）
 
 ```bash
-export OPENAI_API_KEY=your_key
-export OPENAI_VISION_MODEL=gpt-5.6-luna
-uvicorn app.main:app --reload
+export OPENAI_API_KEY="..."
+export OPENAI_VISION_MODEL="gpt-5.6-luna"
 ```
 
-## V1 Paper Loop
-
-```text
-Teacher Agent
-   ↓
-生成 questions JSON
-   ↓
-创建 worksheet_id
-   ↓
-PDF + QR Code
-   ↓
-打印 / 纸笔作答
-   ↓
-拍照上传
-   ↓
-Vision 提取答案
-   ↓
-人工确认识别结果
-   ↓
-规则批改 + 错误分类
-   ↓
-Student Model
-   ↓
-RETEACH / PRACTICE / NEXT_SKILL
-```
-
-这里刻意把 **Vision Recognition** 和 **Grading** 拆开：Vision 只负责看清学生写了什么，正确性仍由确定性程序判断。
+二维码识别和页面透视矫正不依赖 API Key。
 
 ## 测试
 
 ```bash
-pytest -q
+PYTHONPATH=. pytest -q
 ```
 
-## 接下来：V1.1 / V2
+## Next
 
-1. 二维码拍照后自动定位 worksheet_id
-2. OpenCV 做透视矫正 / 页面裁切
-3. Vision 提取竖式步骤并升级错误诊断
-4. macOS `lp` / CUPS 一键自动打印
-5. 固定摄像头自动拍照
-6. 长期知识图谱与跨天 Teacher Agent
+V1.3：打印机 + 固定摄像头 + 自动拍照，将 Paper Loop 进一步变成实体 AI Teacher Machine。
