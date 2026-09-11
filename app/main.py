@@ -14,6 +14,7 @@ from app.curriculum.grade3_math import SKILLS
 from app.curriculum.roadmap import current_skill_for_student, roadmap_for_student
 from app.db.sqlite import connect, init_db
 from app.diagnostic.service import complete_diagnostic, create_diagnostic, get_diagnostic, latest_diagnostic
+from app.review.service import learning_plan_for_student, review_queue
 from app.session.service import create_session, finish_session, get_session, list_sessions
 from app.student.model import get_progress, update_progress
 from app.student.service import create_student, get_student, list_students, student_stats
@@ -43,15 +44,11 @@ def require_session(student_id: int, session_id: str):
     return session
 
 def learning_context(request: Request, student: dict, session: dict, questions=None):
-    skill_id = current_skill_for_student(student["id"])
-    progress = get_progress(student["id"], skill_id)
+    plan = learning_plan_for_student(student["id"])
     return {
-        "request": request,
-        "student": student,
-        "session": session,
-        "skill_id": skill_id,
-        "skill": SKILLS[skill_id],
-        "snapshot": teacher_snapshot(skill_id, progress),
+        "request": request, "student": student, "session": session,
+        "plan": plan, "skill_id": plan["skill_id"], "skill": plan["skill"],
+        "snapshot": teacher_snapshot(plan["skill_id"], plan["progress"]),
         "questions": questions if questions is not None else SESSIONS.get(session["id"], []),
         "vision_enabled": vision_enabled(),
     }
@@ -60,58 +57,50 @@ def learning_context(request: Request, student: dict, session: dict, questions=N
 def root(): return RedirectResponse("/students", status_code=303)
 
 @app.get("/students", response_class=HTMLResponse)
-def students_page(request: Request): return templates.TemplateResponse("students.html", {"request": request, "students": list_students()})
+def students_page(request: Request):
+    return templates.TemplateResponse("students.html", {"request": request, "students": list_students()})
 
 @app.get("/students/new", response_class=HTMLResponse)
-def new_student_page(request: Request): return templates.TemplateResponse("student_new.html", {"request": request, "error": None})
+def new_student_page(request: Request):
+    return templates.TemplateResponse("student_new.html", {"request": request, "error": None})
 
 @app.post("/students")
 def create_student_route(request: Request, name: str = Form(...), grade: int = Form(...)):
     try: student = create_student(name, grade)
-    except ValueError as exc: return templates.TemplateResponse("student_new.html", {"request": request, "error": str(exc)}, status_code=400)
+    except ValueError as exc:
+        return templates.TemplateResponse("student_new.html", {"request": request, "error": str(exc)}, status_code=400)
     return RedirectResponse(f"/students/{student['id']}", status_code=303)
 
 @app.get("/students/{student_id}", response_class=HTMLResponse)
 def student_detail(request: Request, student_id: int):
     student = require_student(student_id)
-    roadmap = roadmap_for_student(student_id)
     current_skill_id = current_skill_for_student(student_id)
+    queue = review_queue(student_id)
     return templates.TemplateResponse("student_detail.html", {
-        "request": request,
-        "student": student,
-        "stats": student_stats(student_id),
-        "sessions": list_sessions(student_id),
-        "roadmap": roadmap,
-        "current_skill": SKILLS[current_skill_id],
-        "current_skill_id": current_skill_id,
-        "progress": get_progress(student_id, current_skill_id),
-        "diagnostic": latest_diagnostic(student_id),
+        "request": request, "student": student, "stats": student_stats(student_id),
+        "sessions": list_sessions(student_id), "roadmap": roadmap_for_student(student_id),
+        "current_skill": SKILLS[current_skill_id], "current_skill_id": current_skill_id,
+        "progress": get_progress(student_id, current_skill_id), "diagnostic": latest_diagnostic(student_id),
+        "review_queue": queue,
     })
 
 @app.post("/students/{student_id}/diagnostics")
 def start_diagnostic(student_id: int):
-    require_student(student_id)
-    assessment = create_diagnostic(student_id)
+    require_student(student_id); assessment = create_diagnostic(student_id)
     return RedirectResponse(f"/students/{student_id}/diagnostics/{assessment['id']}", status_code=303)
 
 @app.get("/students/{student_id}/diagnostics/{assessment_id}", response_class=HTMLResponse)
 def diagnostic_page(request: Request, student_id: int, assessment_id: str):
-    student = require_student(student_id)
-    assessment = get_diagnostic(assessment_id)
-    if not assessment or assessment["student_id"] != student_id:
-        raise HTTPException(404, "Diagnostic assessment not found")
-    if assessment["status"] == "completed":
-        return templates.TemplateResponse("diagnostic_result.html", {"request": request, "student": student, "assessment": assessment})
-    return templates.TemplateResponse("diagnostic.html", {"request": request, "student": student, "assessment": assessment, "skills": SKILLS})
+    student = require_student(student_id); assessment = get_diagnostic(assessment_id)
+    if not assessment or assessment["student_id"] != student_id: raise HTTPException(404, "Diagnostic assessment not found")
+    template = "diagnostic_result.html" if assessment["status"] == "completed" else "diagnostic.html"
+    return templates.TemplateResponse(template, {"request": request, "student": student, "assessment": assessment, "skills": SKILLS})
 
 @app.post("/students/{student_id}/diagnostics/{assessment_id}/submit", response_class=HTMLResponse)
 async def submit_diagnostic(request: Request, student_id: int, assessment_id: str):
-    student = require_student(student_id)
-    assessment = get_diagnostic(assessment_id)
-    if not assessment or assessment["student_id"] != student_id:
-        raise HTTPException(404, "Diagnostic assessment not found")
-    form = await request.form()
-    answers = {q["id"]: str(form.get(q["id"], "")) for q in assessment["questions"]}
+    student = require_student(student_id); assessment = get_diagnostic(assessment_id)
+    if not assessment or assessment["student_id"] != student_id: raise HTTPException(404, "Diagnostic assessment not found")
+    form = await request.form(); answers = {q["id"]: str(form.get(q["id"], "")) for q in assessment["questions"]}
     completed = complete_diagnostic(assessment_id, answers)
     return templates.TemplateResponse("diagnostic_result.html", {"request": request, "student": student, "assessment": completed})
 
@@ -133,15 +122,16 @@ def finish_learning(student_id: int, session_id: str):
 @app.post("/students/{student_id}/sessions/{session_id}/practice", response_class=HTMLResponse)
 def practice(request: Request, student_id: int, session_id: str):
     student = require_student(student_id); session = require_session(student_id, session_id)
-    skill_id = current_skill_for_student(student_id)
-    SESSIONS[session_id] = generate_questions(5, skill_id)
+    plan = learning_plan_for_student(student_id)
+    count = 3 if plan["mode"] == "review" else 5
+    SESSIONS[session_id] = generate_questions(count, plan["skill_id"])
     return templates.TemplateResponse("index.html", learning_context(request, student, session, SESSIONS[session_id]))
 
 @app.post("/students/{student_id}/sessions/{session_id}/worksheet", response_class=HTMLResponse)
 def worksheet(request: Request, student_id: int, session_id: str):
     student = require_student(student_id); session = require_session(student_id, session_id)
-    skill_id = current_skill_for_student(student_id)
-    item = create_worksheet(student_id, generate_questions(5, skill_id), session_id)
+    plan = learning_plan_for_student(student_id); count = 3 if plan["mode"] == "review" else 5
+    item = create_worksheet(student_id, generate_questions(count, plan["skill_id"]), session_id)
     render_worksheet_pdf(item, pdf_path(item["id"]))
     return templates.TemplateResponse("worksheet.html", {"request": request, "student": student, "session": session, "worksheet": item, "vision_enabled": vision_enabled()})
 
@@ -199,24 +189,24 @@ def grade_answers(student: dict, questions: list[dict], answers: dict[str,str], 
         results.append(result)
     return results
 
+def result_context(request: Request, student: dict, session: dict | None, results: list[dict], worksheet_id: str | None = None):
+    plan = learning_plan_for_student(student["id"])
+    return {"request": request, "student": student, "session": session, "snapshot": teacher_snapshot(plan["skill_id"], plan["progress"]), "results": results, "worksheet_id": worksheet_id, "next_plan": plan}
+
 @app.post("/worksheets/{worksheet_id}/grade", response_class=HTMLResponse)
 async def grade_worksheet(request: Request, worksheet_id: str):
     item=get_worksheet(worksheet_id)
     if not item: raise HTTPException(404,"Worksheet not found")
     student=require_student(item["student_id"]); session=get_session(item.get("session_id")) if item.get("session_id") else None; form=await request.form(); answers={q["id"]:str(form.get(q["id"],"")) for q in item["questions"]}
     results=grade_answers(student,item["questions"],answers,worksheet_id,item.get("session_id")); mark_worksheet(worksheet_id,"graded")
-    skill_id=current_skill_for_student(student["id"]); progress=get_progress(student["id"],skill_id)
-    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(skill_id,progress),"results":results,"worksheet_id":worksheet_id})
+    return templates.TemplateResponse("results.html", result_context(request, student, session, results, worksheet_id))
 
 @app.post("/students/{student_id}/sessions/{session_id}/submit", response_class=HTMLResponse)
 async def submit(request: Request, student_id: int, session_id: str):
     student=require_student(student_id); session=require_session(student_id,session_id); questions=SESSIONS.get(session_id,[]); form=await request.form(); answers={q["id"]:str(form.get(q["id"],"")) for q in questions}; results=grade_answers(student,questions,answers,session_id=session_id); SESSIONS[session_id]=[]
-    skill_id=current_skill_for_student(student_id); progress=get_progress(student_id,skill_id)
-    return templates.TemplateResponse("results.html", {"request":request,"student":student,"session":session,"snapshot":teacher_snapshot(skill_id,progress),"results":results})
+    return templates.TemplateResponse("results.html", result_context(request, student, session, results))
 
 @app.get("/api/students/{student_id}")
 def api_student(student_id: int):
-    student=require_student(student_id)
-    skill_id=current_skill_for_student(student_id)
-    diagnostic = latest_diagnostic(student_id)
-    return {"student":student,"current_skill":skill_id,"progress":get_progress(student_id,skill_id),"roadmap":roadmap_for_student(student_id),"diagnostic":diagnostic,"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
+    student=require_student(student_id); skill_id=current_skill_for_student(student_id); diagnostic=latest_diagnostic(student_id); plan=learning_plan_for_student(student_id)
+    return {"student":student,"current_skill":skill_id,"progress":get_progress(student_id,skill_id),"roadmap":roadmap_for_student(student_id),"diagnostic":diagnostic,"review_queue":review_queue(student_id),"learning_plan":plan,"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
