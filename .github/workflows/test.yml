@@ -16,3 +16,9 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python -m py_compile app/main.py app/db/sqlite.py app/student/service.py app/session/service.py app/worksheet/service.py
       - run: PYTHONPATH=. pytest -q
+
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t ai-teacher:ci .
