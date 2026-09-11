@@ -21,6 +21,12 @@ def get_session(session_id: str) -> dict | None:
     return data
 
 
+def mark_lesson_complete(session_id: str, skill_id: str) -> dict | None:
+    with connect() as conn:
+        conn.execute("UPDATE learning_sessions SET lesson_skill_id=? WHERE id=?", (skill_id, session_id))
+    return get_session(session_id)
+
+
 def list_sessions(student_id: int, limit: int = 20) -> list[dict]:
     with connect() as conn:
         rows = conn.execute("""

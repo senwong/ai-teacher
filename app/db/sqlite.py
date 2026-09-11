@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
   id TEXT PRIMARY KEY,
   student_id INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'active',
+  lesson_skill_id TEXT,
   started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   ended_at TEXT,
   summary_json TEXT
@@ -129,6 +130,7 @@ def init_db():
         _ensure_column(conn, "classrooms", "class_code", "TEXT")
         _ensure_column(conn, "students", "classroom_id", "INTEGER")
         _ensure_column(conn, "students", "pin_hash", "TEXT")
+        _ensure_column(conn, "learning_sessions", "lesson_skill_id", "TEXT")
         _ensure_column(conn, "attempts", "worksheet_id", "TEXT")
         _ensure_column(conn, "attempts", "session_id", "TEXT")
         _ensure_column(conn, "worksheets", "processed_image_path", "TEXT")
