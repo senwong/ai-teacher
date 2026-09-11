@@ -5,8 +5,30 @@ from pathlib import Path
 DB_PATH = Path(os.getenv("AI_TEACHER_DB", "./data/ai_teacher.db"))
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'teacher',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS classrooms (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  grade INTEGER NOT NULL DEFAULT 3,
+  owner_user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS students (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  classroom_id INTEGER,
   name TEXT NOT NULL,
   grade INTEGER NOT NULL DEFAULT 3,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -63,7 +85,11 @@ CREATE TABLE IF NOT EXISTS worksheets (
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_classrooms_owner ON classrooms(owner_user_id);
+CREATE INDEX IF NOT EXISTS idx_students_classroom ON students(classroom_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 """
+
 
 def connect():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -71,19 +97,23 @@ def connect():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def _ensure_column(conn, table: str, column: str, definition: str):
     columns = {row[1] for row in conn.execute(f"PRAGMA table_info({table})").fetchall()}
     if column not in columns:
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
+
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "students", "classroom_id", "INTEGER")
         _ensure_column(conn, "attempts", "worksheet_id", "TEXT")
         _ensure_column(conn, "attempts", "session_id", "TEXT")
         _ensure_column(conn, "worksheets", "processed_image_path", "TEXT")
         _ensure_column(conn, "worksheets", "vision_json", "TEXT")
         _ensure_column(conn, "worksheets", "session_id", "TEXT")
+
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):
     with connect() as conn:
