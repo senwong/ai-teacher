@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
   ended_at TEXT,
   summary_json TEXT
 );
+CREATE TABLE IF NOT EXISTS diagnostic_assessments (
+  id TEXT PRIMARY KEY,
+  student_id INTEGER NOT NULL,
+  questions_json TEXT NOT NULL,
+  results_json TEXT,
+  status TEXT NOT NULL DEFAULT 'created',
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  completed_at TEXT
+);
 CREATE TABLE IF NOT EXISTS skill_progress (
   student_id INTEGER NOT NULL,
   skill_id TEXT NOT NULL,
