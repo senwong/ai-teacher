@@ -1,5 +1,6 @@
 from app.db.sqlite import connect
 from app.curriculum.grade3_math import DEFAULT_SKILL_ID
+from app.student.access import generate_pin, set_student_pin
 
 
 def create_student(name: str, grade: int, classroom_id: int | None = None) -> dict:
@@ -9,9 +10,24 @@ def create_student(name: str, grade: int, classroom_id: int | None = None) -> di
     if grade < 1 or grade > 12:
         raise ValueError("Grade must be between 1 and 12")
     with connect() as conn:
+        if classroom_id is not None and conn.execute(
+            "SELECT 1 FROM students WHERE classroom_id=? AND name=?",
+            (classroom_id, name),
+        ).fetchone():
+            raise ValueError("同一班级内学生姓名不能重复")
         cur = conn.execute("INSERT INTO students(name, grade, classroom_id) VALUES (?, ?, ?)", (name, grade, classroom_id))
         row = conn.execute("SELECT * FROM students WHERE id = ?", (cur.lastrowid,)).fetchone()
-    return dict(row)
+    student = dict(row)
+    pin = generate_pin()
+    set_student_pin(student["id"], pin)
+    student["initial_pin"] = pin
+    return student
+
+
+def reset_student_pin(student_id: int) -> str:
+    pin = generate_pin()
+    set_student_pin(student_id, pin)
+    return pin
 
 
 def get_student(student_id: int) -> dict | None:
