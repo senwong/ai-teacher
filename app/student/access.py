@@ -1,7 +1,11 @@
+import base64
 import hashlib
 import hmac
+import io
 import secrets
 from datetime import datetime, timedelta, timezone
+
+import qrcode
 
 from app.db.sqlite import connect
 
@@ -30,6 +34,10 @@ def generate_pin() -> str:
     return f"{secrets.randbelow(10000):04d}"
 
 
+def generate_login_code() -> str:
+    return secrets.token_urlsafe(12)
+
+
 def set_student_pin(student_id: int, pin: str) -> None:
     if len(pin) != 4 or not pin.isdigit():
         raise ValueError("学生 PIN 必须是 4 位数字")
@@ -48,6 +56,32 @@ def authenticate_student(class_code: str, name: str, pin: str) -> dict | None:
     if not row or not row["pin_hash"] or not _verify_pin(pin.strip(), row["pin_hash"]):
         return None
     return dict(row)
+
+
+def student_by_login_code(login_code: str) -> dict | None:
+    with connect() as conn:
+        row = conn.execute(
+            """SELECT s.*, c.name AS classroom_name, c.class_code
+               FROM students s JOIN classrooms c ON c.id=s.classroom_id
+               WHERE s.login_code=?""",
+            (login_code.strip(),),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def authenticate_student_by_login_code(login_code: str, pin: str) -> dict | None:
+    student = student_by_login_code(login_code)
+    if not student or not student.get("pin_hash") or not _verify_pin(pin.strip(), student["pin_hash"]):
+        return None
+    return student
+
+
+def qr_data_uri(text: str) -> str:
+    image = qrcode.make(text)
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    encoded = base64.b64encode(output.getvalue()).decode("ascii")
+    return f"data:image/png;base64,{encoded}"
 
 
 def create_student_session(student_id: int) -> str:
