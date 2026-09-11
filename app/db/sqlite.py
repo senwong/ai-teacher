@@ -53,6 +53,14 @@ CREATE TABLE IF NOT EXISTS learning_sessions (
   ended_at TEXT,
   summary_json TEXT
 );
+CREATE TABLE IF NOT EXISTS session_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  session_id TEXT NOT NULL,
+  student_id INTEGER NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 CREATE TABLE IF NOT EXISTS diagnostic_assessments (
   id TEXT PRIMARY KEY,
   student_id INTEGER NOT NULL,
@@ -101,6 +109,7 @@ CREATE INDEX IF NOT EXISTS idx_classrooms_owner ON classrooms(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_students_classroom ON students(classroom_id);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_student_auth_sessions_student ON student_auth_sessions(student_id);
+CREATE INDEX IF NOT EXISTS idx_session_messages_session ON session_messages(session_id,id);
 """
 
 
