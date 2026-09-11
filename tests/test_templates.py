@@ -10,3 +10,10 @@ def test_all_templates_compile():
     assert templates
     for path in templates:
         env.get_template(path.name)
+
+
+def test_teacher_student_profile_has_no_learning_entry():
+    content = Path("app/templates/student_detail.html").read_text()
+    assert "开始今天的学习" not in content
+    assert "/students/{{ student.id }}/sessions" not in content
+    assert "重置登录 PIN" in content
