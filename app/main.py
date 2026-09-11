@@ -125,7 +125,7 @@ def learning_context(request: Request, student: dict, session: dict, questions=N
     }
 
 
-def login_card_context(request: Request, classroom: dict, student: dict, pin: str) -> dict:
+def login_card_context(request: Request, classroom: dict, student: dict, pin: str | None = None) -> dict:
     login_url = str(request.url_for("student_join_page", login_code=student["login_code"]))
     return {
         "request": request,
@@ -353,6 +353,13 @@ def create_student_route(request: Request, classroom_id: int, name: str = Form(.
     except ValueError as exc:
         return templates.TemplateResponse("student_new.html", {"request": request, "user": current_user(request), "classroom": classroom, "error": str(exc)}, status_code=400)
     return templates.TemplateResponse("student_created.html", login_card_context(request, classroom, student, student["initial_pin"]))
+
+
+@app.get("/students/{student_id}/login-card", response_class=HTMLResponse)
+def student_login_card(request: Request, student_id: int):
+    student = require_student(request, student_id)
+    classroom = require_classroom(request, student["classroom_id"])
+    return templates.TemplateResponse("student_created.html", login_card_context(request, classroom, student))
 
 
 @app.post("/students/{student_id}/reset-pin", response_class=HTMLResponse)
