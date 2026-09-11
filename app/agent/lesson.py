@@ -1,3 +1,6 @@
+from app.agent.strategy import TeachingStrategy
+
+
 LESSONS = {
     "multiplication.one_digit_facts": {
         "concept": "乘法表示几个相同的数相加。例如 4 × 3，就是 3 个 4 相加。",
@@ -42,8 +45,30 @@ LESSONS = {
 }
 
 
-def lesson_for(skill_id: str, progress: dict) -> dict:
-    lesson = dict(LESSONS[skill_id])
-    if progress.get("last_error_type") == "carry_error":
-        lesson["tip"] = "你最近容易在进位上出错。这次每一步都把进位数字单独写出来，再进入下一位。"
+def _apply_strategy(lesson: dict, strategy: TeachingStrategy, progress: dict) -> dict:
+    lesson["strategy"] = {"id": strategy.id, "label": strategy.label, "reason": strategy.reason}
+
+    if strategy.id == "vertical_steps":
+        lesson["teaching_focus"] = "把每一位和进位分开写清楚，再进入下一步。"
+        lesson["tip"] = "你最近容易在进位上出错。这次把进位数字单独圈出来，每算下一位前先确认有没有进位。"
+    elif strategy.id == "error_contrast":
+        lesson["teaching_focus"] = "对比刚才容易出错的做法和正确步骤，找到差别。"
+        lesson["contrast"] = {
+            "wrong": "只看最终答案，跳过中间步骤，容易漏算或算错。",
+            "right": "每完成一步都写下来，再检查这一位是否已经处理完整。",
+        }
+    elif strategy.id == "concrete_decomposition":
+        lesson["teaching_focus"] = "先把数字拆成容易理解的小块，再合起来。"
+        lesson["tip"] = "先不用追求快。把数字拆开算清楚，等理解稳定后再换成更快的竖式。"
+    elif strategy.id == "guided_steps":
+        lesson["teaching_focus"] = "你已经有基础了，这次只抓住最关键的步骤。"
+    else:
+        lesson["teaching_focus"] = "先理解这个方法为什么成立，再记计算步骤。"
+
+    if progress.get("last_error_type"):
+        lesson["recent_error"] = progress["last_error_type"]
     return lesson
+
+
+def lesson_for(skill_id: str, progress: dict, strategy: TeachingStrategy) -> dict:
+    return _apply_strategy(dict(LESSONS[skill_id]), strategy, progress)
