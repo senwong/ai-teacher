@@ -1,6 +1,6 @@
 FROM python:3.12-slim
 
-ARG DEBIAN_MIRROR=https://mirrors.ustc.edu.cn
+ARG DEBIAN_MIRROR=https://deb.debian.org
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
