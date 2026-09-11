@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Teacher MVP</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<main class="container">
+  <header><div><span class="eyebrow">AI Teacher · Grade 3 Math</span><h1>你好，{{ student.name }}</h1></div><div class="score">掌握度 <strong>{{ '%.0f'|format(snapshot.progress.mastery * 100) }}%</strong></div></header>
+  <section class="card teacher"><h2>老师</h2><p>{{ snapshot.message }}</p><div class="meta">当前状态：{{ snapshot.state }} · 已练习 {{ snapshot.progress.attempts }} 题</div></section>
+  {% if questions %}
+  <form action="/submit" method="post" class="card">
+    <h2>练习题</h2>
+    <p class="muted">先在纸上写步骤，再把最终答案填进来。V1 会改为打印试卷 + 拍照识别。</p>
+    {% for q in questions %}<label class="question"><span>{{ loop.index }}. {{ q.prompt }}</span><input name="{{ q.id }}" inputmode="numeric" autocomplete="off" required /></label>{% endfor %}
+    <button type="submit">提交给老师批改</button>
+  </form>
+  {% else %}
+  <form action="/practice" method="post"><button type="submit">开始 5 道练习</button></form>
+  {% endif %}
+</main>
+</body>
+</html>
