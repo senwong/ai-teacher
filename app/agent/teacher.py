@@ -1,6 +1,6 @@
-import os
 from app.agent.state_machine import decide_next_state
 from app.curriculum.grade3_math import SKILLS
+from app.llm.provider import client, enabled, text_model
 
 
 def base_teaching_message(skill_id: str, progress: dict) -> str:
@@ -13,15 +13,12 @@ def base_teaching_message(skill_id: str, progress: dict) -> str:
 
 
 def llm_teaching_message(skill_id: str, progress: dict) -> str | None:
-    key = os.getenv("OPENAI_API_KEY")
-    if not key:
+    if not enabled():
         return None
     try:
-        from openai import OpenAI
-        client = OpenAI(api_key=key)
         skill = SKILLS[skill_id]
-        response = client.responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-5.6-luna"),
+        response = client().responses.create(
+            model=text_model(),
             input=(
                 "你是耐心的小学三年级数学老师。请用80字以内中文讲解当前知识点，不直接给练习答案。"
                 f"知识点：{skill['title']}；目标：{skill['objective']}；"

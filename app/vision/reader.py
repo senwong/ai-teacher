@@ -1,12 +1,13 @@
 import base64
 import json
 import mimetypes
-import os
 from pathlib import Path
+
+from app.llm.provider import client, enabled, vision_model
 
 
 def vision_enabled() -> bool:
-    return bool(os.getenv("OPENAI_API_KEY"))
+    return enabled()
 
 
 def _clean_json(text: str) -> dict:
@@ -19,11 +20,8 @@ def _clean_json(text: str) -> dict:
 
 
 def extract_submission(image_path: Path, questions: list[dict]) -> dict:
-    key = os.getenv("OPENAI_API_KEY")
-    if not key:
-        raise RuntimeError("OPENAI_API_KEY is not configured")
-
-    from openai import OpenAI
+    if not enabled():
+        raise RuntimeError("AI_API_KEY is not configured")
 
     mime = mimetypes.guess_type(image_path.name)[0] or "image/jpeg"
     encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
@@ -40,9 +38,8 @@ def extract_submission(image_path: Path, questions: list[dict]) -> dict:
         f"Questions: {json.dumps(question_desc, ensure_ascii=False)}"
     )
 
-    client = OpenAI(api_key=key)
-    response = client.responses.create(
-        model=os.getenv("OPENAI_VISION_MODEL", os.getenv("OPENAI_MODEL", "gpt-5.6-luna")),
+    response = client().responses.create(
+        model=vision_model(),
         input=[{
             "role": "user",
             "content": [
