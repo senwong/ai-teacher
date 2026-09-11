@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS worksheets (
   questions_json TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'created',
   image_path TEXT,
+  processed_image_path TEXT,
+  vision_json TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -61,6 +63,12 @@ def init_db():
         columns = {row[1] for row in conn.execute("PRAGMA table_info(attempts)").fetchall()}
         if "worksheet_id" not in columns:
             conn.execute("ALTER TABLE attempts ADD COLUMN worksheet_id TEXT")
+
+        worksheet_columns = {row[1] for row in conn.execute("PRAGMA table_info(worksheets)").fetchall()}
+        if "processed_image_path" not in worksheet_columns:
+            conn.execute("ALTER TABLE worksheets ADD COLUMN processed_image_path TEXT")
+        if "vision_json" not in worksheet_columns:
+            conn.execute("ALTER TABLE worksheets ADD COLUMN vision_json TEXT")
 
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):

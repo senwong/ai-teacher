@@ -1,9 +1,32 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8" /><meta name="viewport" content="width=device-width,initial-scale=1" /><title>AI Teacher MVP</title><link rel="stylesheet" href="/static/style.css" /></head>
-<body><main class="container">
-<header><div><span class="eyebrow">AI Teacher · Grade 3 Math</span><h1>你好，{{ student.name }}</h1></div><div class="score">掌握度 <strong>{{ '%.0f'|format(snapshot.progress.mastery * 100) }}%</strong></div></header>
-<section class="card teacher"><h2>老师</h2><p>{{ snapshot.message }}</p><div class="meta">当前状态：{{ snapshot.state }} · 已练习 {{ snapshot.progress.attempts }} 题</div></section>
-<section class="card paper-flow"><div><span class="eyebrow">V1 · Paper Loop</span><h2>纸笔练习</h2><p class="muted">生成带 worksheet_id 和二维码的 PDF，打印完成后拍整张答卷，系统会尝试识别答案并让你确认后批改。</p></div><form action="/worksheet" method="post"><button type="submit">生成可打印试卷</button></form><div class="meta">Vision：{{ '已启用' if vision_enabled else '未配置 API Key，上传后可手工录入答案' }}</div></section>
-{% if questions %}<form action="/submit" method="post" class="card"><h2>屏幕练习</h2>{% for q in questions %}<label class="question"><span>{{ loop.index }}. {{ q.prompt }}</span><input name="{{ q.id }}" inputmode="numeric" autocomplete="off" required /></label>{% endfor %}<button type="submit">提交给老师批改</button></form>{% else %}<form action="/practice" method="post"><button class="secondary" type="submit">继续用屏幕练习 5 题</button></form>{% endif %}
-</main></body></html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>AI Teacher MVP</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+<main class="container">
+  <header><div><span class="eyebrow">AI Teacher · Grade 3 Math</span><h1>你好，{{ student.name }}</h1></div><div class="score">掌握度 <strong>{{ '%.0f'|format(snapshot.progress.mastery * 100) }}%</strong></div></header>
+  <section class="card teacher"><h2>老师</h2><p>{{ snapshot.message }}</p><div class="meta">当前状态：{{ snapshot.state }} · 已练习 {{ snapshot.progress.attempts }} 题</div></section>
+
+  <section class="card paper-flow">
+    <div><span class="eyebrow">V1.1 · Camera Intelligence</span><h2>纸笔练习</h2><p class="muted">生成带 worksheet_id 和二维码的 PDF；完成后拍整张答卷，系统可自动从二维码关联试卷、矫正页面并读取答案与步骤。</p></div>
+    <form action="/worksheet" method="post"><button type="submit">生成可打印试卷</button></form>
+    <div class="meta">Vision：{{ '已启用' if vision_enabled else '未配置 API Key，二维码和页面矫正仍可本地运行' }}</div>
+    <form action="/answer-sheet/upload" method="post" enctype="multipart/form-data" class="scan-form"><label><strong>已有纸质答卷？</strong><span class="muted">直接拍整张 A4，系统会从二维码自动找到对应试卷。</span></label><input type="file" name="photo" accept="image/jpeg,image/png,image/webp" capture="environment" required><button class="secondary" type="submit">自动识别试卷并批改</button></form>
+  </section>
+
+  {% if questions %}
+  <form action="/submit" method="post" class="card">
+    <h2>屏幕练习</h2>
+    {% for q in questions %}<label class="question"><span>{{ loop.index }}. {{ q.prompt }}</span><input name="{{ q.id }}" inputmode="numeric" autocomplete="off" required /></label>{% endfor %}
+    <button type="submit">提交给老师批改</button>
+  </form>
+  {% else %}
+  <form action="/practice" method="post"><button class="secondary" type="submit">继续用屏幕练习 5 题</button></form>
+  {% endif %}
+</main>
+</body>
+</html>
