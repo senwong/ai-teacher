@@ -25,6 +25,13 @@ def get_worksheet(worksheet_id: str) -> dict | None:
         return None
     data = dict(row)
     data["questions"] = json.loads(data.pop("questions_json"))
+    if data.get("vision_json"):
+        try:
+            data["vision"] = json.loads(data["vision_json"])
+        except json.JSONDecodeError:
+            data["vision"] = None
+    else:
+        data["vision"] = None
     return data
 
 
@@ -33,6 +40,14 @@ def mark_worksheet(worksheet_id: str, status: str, image_path: str | None = None
         conn.execute(
             "UPDATE worksheets SET status = ?, image_path = COALESCE(?, image_path), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
             (status, image_path, worksheet_id),
+        )
+
+
+def save_vision_result(worksheet_id: str, result: dict, processed_image_path: str | None = None):
+    with connect() as conn:
+        conn.execute(
+            "UPDATE worksheets SET vision_json = ?, processed_image_path = COALESCE(?, processed_image_path), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (json.dumps(result, ensure_ascii=False), processed_image_path, worksheet_id),
         )
 
 
@@ -45,3 +60,9 @@ def upload_path(worksheet_id: str, suffix: str) -> Path:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     safe_suffix = suffix.lower() if suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
     return UPLOAD_DIR / f"{worksheet_id}{safe_suffix}"
+
+
+def incoming_upload_path(suffix: str) -> Path:
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    safe_suffix = suffix.lower() if suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"} else ".jpg"
+    return UPLOAD_DIR / f"incoming-{uuid.uuid4().hex[:12]}{safe_suffix}"
