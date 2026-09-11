@@ -1,5 +1,7 @@
 import os
+import secrets
 import sqlite3
+import string
 from pathlib import Path
 
 DB_PATH = Path(os.getenv("AI_TEACHER_DB", "./data/ai_teacher.db"))
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS classrooms (
   name TEXT NOT NULL,
   grade INTEGER NOT NULL DEFAULT 3,
   owner_user_id INTEGER NOT NULL,
+  class_code TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS students (
@@ -31,6 +34,13 @@ CREATE TABLE IF NOT EXISTS students (
   classroom_id INTEGER,
   name TEXT NOT NULL,
   grade INTEGER NOT NULL DEFAULT 3,
+  pin_hash TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS student_auth_sessions (
+  token_hash TEXT PRIMARY KEY,
+  student_id INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS learning_sessions (
@@ -88,6 +98,7 @@ CREATE TABLE IF NOT EXISTS worksheets (
 CREATE INDEX IF NOT EXISTS idx_classrooms_owner ON classrooms(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_students_classroom ON students(classroom_id);
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_student_auth_sessions_student ON student_auth_sessions(student_id);
 """
 
 
@@ -104,15 +115,28 @@ def _ensure_column(conn, table: str, column: str, definition: str):
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
 
+def _new_class_code(conn) -> str:
+    alphabet = string.ascii_uppercase + string.digits
+    while True:
+        code = "".join(secrets.choice(alphabet) for _ in range(6))
+        if not conn.execute("SELECT 1 FROM classrooms WHERE class_code=?", (code,)).fetchone():
+            return code
+
+
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        _ensure_column(conn, "classrooms", "class_code", "TEXT")
         _ensure_column(conn, "students", "classroom_id", "INTEGER")
+        _ensure_column(conn, "students", "pin_hash", "TEXT")
         _ensure_column(conn, "attempts", "worksheet_id", "TEXT")
         _ensure_column(conn, "attempts", "session_id", "TEXT")
         _ensure_column(conn, "worksheets", "processed_image_path", "TEXT")
         _ensure_column(conn, "worksheets", "vision_json", "TEXT")
         _ensure_column(conn, "worksheets", "session_id", "TEXT")
+        for row in conn.execute("SELECT id FROM classrooms WHERE class_code IS NULL OR class_code='' ").fetchall():
+            conn.execute("UPDATE classrooms SET class_code=? WHERE id=?", (_new_class_code(conn), row["id"]))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_classrooms_code ON classrooms(class_code)")
 
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):
