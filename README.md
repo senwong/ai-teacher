@@ -1,16 +1,22 @@
 # AI Teacher MVP
 
-一个最小可运行的「AI 老师」教学闭环：**讲解 → 出题 → 学生作答 → 批改 → 错误诊断 → 更新掌握度 → 决定下一教学动作**。
+一个最小可运行的「AI 老师」教学闭环：**讲解 → 出题 → 纸笔作答 → 拍照 → 确认识别 → 批改 → 错误诊断 → 更新掌握度 → 决定下一教学动作**。
 
-当前 V0 聚焦小学三年级数学「两位数乘一位数」。先验证教学闭环，不接打印机和摄像头；V1 再加入 PDF/打印和拍照识别。
+当前聚焦小学三年级数学「两位数乘一位数」。V1 已加入真实纸笔练习链路。
 
-## 架构
+## V1 已完成
 
-- FastAPI：Web 与 API
-- SQLite：学生与学习进度
-- Rule Engine：批改、错误分类、掌握度、状态机
-- Optional LLM：配置 `OPENAI_API_KEY` 后，用模型生成更自然的教师讲解；没有 Key 也能完整运行
-- Vanilla HTML/CSS：零前端构建依赖
+- FastAPI + SQLite + 零构建 Web UI
+- 生成 5 道数学题
+- 为每份试卷生成唯一 `worksheet_id`
+- ReportLab 生成 A4 PDF
+- PDF 内含二维码，可用于后续相机自动关联试卷
+- 上传 JPG / PNG / WEBP 答卷照片
+- 配置 `OPENAI_API_KEY` 后调用 Vision 模型提取每题最终答案
+- Vision 结果先让学生/家长确认，再进入批改，避免识别错误污染学习数据
+- 未配置 Vision 时自动降级为人工录入答案
+- 复用原有 grader、错误分类、Student Model、Teacher State Machine
+- `attempts` 记录可关联 `worksheet_id`
 
 ## 快速开始
 
@@ -18,13 +24,46 @@
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env
 uvicorn app.main:app --reload
 ```
 
 打开 http://127.0.0.1:8000
 
-> 如果要启用模型讲解，请把 `.env` 中 `OPENAI_API_KEY` 导入当前 shell，例如 `export OPENAI_API_KEY=...`。当前代码不会主动读取 `.env` 文件，避免额外依赖；也可以自行加入 `python-dotenv`。
+如需 Vision：
+
+```bash
+export OPENAI_API_KEY=your_key
+export OPENAI_VISION_MODEL=gpt-5.6-luna
+uvicorn app.main:app --reload
+```
+
+## V1 Paper Loop
+
+```text
+Teacher Agent
+   ↓
+生成 questions JSON
+   ↓
+创建 worksheet_id
+   ↓
+PDF + QR Code
+   ↓
+打印 / 纸笔作答
+   ↓
+拍照上传
+   ↓
+Vision 提取答案
+   ↓
+人工确认识别结果
+   ↓
+规则批改 + 错误分类
+   ↓
+Student Model
+   ↓
+RETEACH / PRACTICE / NEXT_SKILL
+```
+
+这里刻意把 **Vision Recognition** 和 **Grading** 拆开：Vision 只负责看清学生写了什么，正确性仍由确定性程序判断。
 
 ## 测试
 
@@ -32,33 +71,11 @@ uvicorn app.main:app --reload
 pytest -q
 ```
 
-## 当前教学状态机
+## 接下来：V1.1 / V2
 
-```text
-TEACHING
-  ↓
-PRACTICE
-  ↓
-GRADING
-  ↓
-DIAGNOSIS
-  ├── RETEACH
-  └── NEXT_SKILL
-```
-
-当前掌握度采用最简单的 `correct / attempts`，目的是先验证系统结构。后续可以替换为滚动窗口、IRT/BKT 或带遗忘曲线的 mastery model。
-
-## V1 Roadmap
-
-1. Worksheet JSON → PDF 渲染
-2. CUPS / macOS `lp` 自动打印
-3. 试卷 QR Code / worksheet_id
-4. 相机拍照上传
-5. Vision 模型识别答案和步骤
-6. 程序校验客观题，模型诊断解题过程
-7. 学生知识图谱与跨天复习计划
-8. 家长 / 真人导师 Dashboard
-
-## 为什么先规则、后 Agent
-
-Teacher Agent 不应该完全自由运行。课程、掌握规则和关键状态转移由程序控制，模型主要负责解释、反馈和教学策略语言化，这样更容易测试、追踪和迭代。
+1. 二维码拍照后自动定位 worksheet_id
+2. OpenCV 做透视矫正 / 页面裁切
+3. Vision 提取竖式步骤并升级错误诊断
+4. macOS `lp` / CUPS 一键自动打印
+5. 固定摄像头自动拍照
+6. 长期知识图谱与跨天 Teacher Agent

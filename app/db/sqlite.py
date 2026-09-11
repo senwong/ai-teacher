@@ -32,9 +32,21 @@ CREATE TABLE IF NOT EXISTS attempts (
   is_correct INTEGER NOT NULL,
   error_type TEXT,
   feedback TEXT,
+  worksheet_id TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS worksheets (
+  id TEXT PRIMARY KEY,
+  student_id INTEGER NOT NULL,
+  questions_json TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'created',
+  image_path TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
+
 
 def connect():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -46,6 +58,9 @@ def connect():
 def init_db():
     with connect() as conn:
         conn.executescript(SCHEMA)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(attempts)").fetchall()}
+        if "worksheet_id" not in columns:
+            conn.execute("ALTER TABLE attempts ADD COLUMN worksheet_id TEXT")
 
 
 def get_or_create_student(name: str = "Demo Student", grade: int = 3):
