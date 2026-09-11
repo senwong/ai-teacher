@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>AI Teacher · {{ student.name }}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+    .classroom-chat{margin-top:22px;padding:24px}.chat-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start}.chat-messages{display:grid;gap:12px;margin:18px 0;max-height:360px;overflow:auto}.chat-message{max-width:88%;padding:12px 15px;border-radius:16px}.chat-message p{margin:4px 0 0;white-space:pre-wrap;line-height:1.65}.chat-message-teacher{background:#f2f2f7;justify-self:start}.chat-message-student{background:#007aff;color:white;justify-self:end}.chat-message-student strong{color:white}.chat-suggestions{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}.chat-suggestions button{border:1px solid #d2d2d7;background:#fff;border-radius:999px;padding:8px 12px;cursor:pointer}.chat-compose{display:grid;grid-template-columns:1fr auto auto;gap:8px}.chat-compose input{min-width:0;border:1px solid #d2d2d7;border-radius:12px;padding:12px 14px;font-size:16px}.voice-settings{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;font-size:14px}.voice-settings select{border:1px solid #d2d2d7;border-radius:9px;padding:6px 8px;background:white}@media(max-width:640px){.chat-compose{grid-template-columns:1fr auto}.chat-compose [data-chat-submit]{grid-column:1/-1}.chat-message{max-width:94%}}
+  </style>
 </head>
 <body class="learning-body">
 <main class="student-shell">
@@ -38,7 +41,7 @@
 
   {% if snapshot.lesson and not questions %}
   <div class="ios-section-title">{{ '快速回顾' if snapshot.teaching_mode == 'quick_recap' else ('针对性重讲' if snapshot.teaching_mode == 'reteach' else '老师讲解') }}</div>
-  <section class="card" style="padding:28px">
+  <section class="card" style="padding:28px" data-teaching-content>
     <span class="eyebrow">{{ '先抓住最关键的一点' if snapshot.teaching_mode == 'quick_recap' else '先理解这个概念' }}</span>
     <h2 style="margin-top:8px">{{ snapshot.lesson.concept }}</h2>
 
@@ -85,7 +88,61 @@
     {% endfor %}
     <div style="margin-top:20px"><button class="large-button full-button" type="submit">完成并提交</button></div>
   </form>
-  {% else %}
+  {% endif %}
+
+  <section class="card classroom-chat" data-learning-chat data-session-id="{{ session.id }}">
+    <div class="chat-head">
+      <div>
+        <span class="eyebrow">可以随时问老师</span>
+        <h2 style="margin:6px 0">哪里没听懂？</h2>
+        <p class="muted" style="margin:0">{{ '现在正在练习，我会给你提示和步骤，但不会直接告诉当前题答案。' if questions else '可以问为什么、让老师换一种方法讲，或者再举一个例子。' }}</p>
+      </div>
+    </div>
+
+    <div class="chat-messages" data-chat-messages aria-live="polite">
+      {% for item in chat_messages %}
+      <div class="chat-message {{ 'chat-message-student' if item.role == 'student' else 'chat-message-teacher' }}">
+        <strong>{{ '你' if item.role == 'student' else 'AI 老师' }}</strong>
+        <p>{{ item.content }}</p>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="chat-suggestions">
+      {% if questions %}
+      <button type="button" data-chat-suggestion="第一步应该怎么想？">第一步怎么想？</button>
+      <button type="button" data-chat-suggestion="给我一个提示，但不要告诉我答案。">给我一个提示</button>
+      <button type="button" data-chat-suggestion="我卡住了，帮我把这一步拆开。">我卡住了</button>
+      {% else %}
+      <button type="button" data-chat-suggestion="这是什么意思？能再解释一下吗？">这是什么意思？</button>
+      <button type="button" data-chat-suggestion="能换一种方法讲吗？">换一种方法讲</button>
+      <button type="button" data-chat-suggestion="能再举一个例子吗？">再举一个例子</button>
+      <button type="button" data-chat-suggestion="我还是没懂，可以讲得更简单一点吗？">我还是没懂</button>
+      {% endif %}
+    </div>
+
+    <form class="chat-compose" data-chat-form>
+      <input data-chat-input maxlength="500" autocomplete="off" placeholder="输入问题，或者点麦克风说话…" aria-label="问老师">
+      <button class="secondary" type="button" data-mic-button>🎤 说话</button>
+      <button class="button" type="submit" data-chat-submit>问老师</button>
+    </form>
+    <p class="muted" data-mic-status style="margin:8px 0 0;font-size:13px"></p>
+
+    <div class="voice-settings">
+      <label><input type="checkbox" data-auto-speak> 自动朗读老师讲解</label>
+      <label>语速
+        <select data-speech-rate>
+          <option value="0.85">慢</option>
+          <option value="1" selected>正常</option>
+          <option value="1.15">快</option>
+        </select>
+      </label>
+      <button class="ghost" type="button" data-speech-stop>暂停朗读</button>
+      <button class="ghost" type="button" data-speech-replay>重新播放</button>
+    </div>
+  </section>
+
+  {% if not questions %}
   <section class="primary-action">
     <span class="eyebrow" style="color:rgba(255,255,255,.72)">{{ '讲完再练' if snapshot.lesson else ('到期复习' if plan.mode == 'review' else '下一步') }}</span>
     <h2>{{ '试试刚才的方法' if snapshot.lesson else ('先做一次短复习' if plan.mode == 'review' else '开始今天的练习') }}</h2>
@@ -99,5 +156,6 @@
 
   <p class="student-focus">{{ student.grade }} 年级数学 · Session {{ session.id }}</p>
 </main>
+<script src="/static/learning_chat.js"></script>
 </body>
 </html>
