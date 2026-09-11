@@ -33,3 +33,11 @@ def test_login_card_distinguishes_reusable_qr_from_one_time_pin():
     assert "{% if pin %}" in content
     assert "系统不会再次显示这个 PIN" in content
     assert "重新查看或打印登录卡不会改变学生 PIN" in content
+
+
+def test_learning_page_renders_quick_recap_as_real_teaching():
+    content = Path("app/templates/index.html").read_text()
+    assert "快速回顾" in content
+    assert "先抓住最关键的一点" in content
+    assert "snapshot.teaching_mode == 'quick_recap'" in content
+    assert "snapshot.lesson.example_steps" in content

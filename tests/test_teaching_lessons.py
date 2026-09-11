@@ -1,18 +1,22 @@
 from app.agent.lesson import lesson_for
 from app.agent.state_machine import TeacherState, decide_next_state
 from app.agent.strategy import select_strategy
+from app.agent.teacher import teacher_snapshot
+from app.agent.teaching_flow import TeachingMode, select_teaching_mode
 
 
 def test_new_skill_enters_teaching_before_practice():
     progress = {"attempts": 0, "mastery": 0.0, "last_error_type": None}
     assert decide_next_state(progress, 0.8, 5) == TeacherState.TEACHING
     assert select_strategy(progress).id == "conceptual"
+    assert select_teaching_mode(progress, 0.8) == TeachingMode.FULL_LESSON
 
 
 def test_error_enters_reteach_with_vertical_strategy_for_carry():
     progress = {"attempts": 2, "mastery": 0.5, "last_error_type": "carry_error"}
     assert decide_next_state(progress, 0.8, 5) == TeacherState.RETEACH
     assert select_strategy(progress).id == "vertical_steps"
+    assert select_teaching_mode(progress, 0.8) == TeachingMode.RETEACH
 
 
 def test_generic_error_uses_error_contrast():
@@ -23,6 +27,25 @@ def test_generic_error_uses_error_contrast():
 def test_low_mastery_after_repeated_practice_uses_decomposition():
     progress = {"attempts": 4, "mastery": 0.5, "last_error_type": None}
     assert select_strategy(progress).id == "concrete_decomposition"
+
+
+def test_partial_mastery_gets_quick_recap_instead_of_bare_practice():
+    progress = {"attempts": 7, "mastery": 0.64, "last_error_type": None}
+    assert decide_next_state(progress, 0.8, 5) == TeacherState.PRACTICE
+    assert select_teaching_mode(progress, 0.8) == TeachingMode.QUICK_RECAP
+
+    snapshot = teacher_snapshot("multiplication.one_digit_facts", progress)
+    assert snapshot["teaching_mode"] == "quick_recap"
+    assert snapshot["lesson"] is not None
+    assert snapshot["lesson"]["concept"]
+    assert snapshot["lesson"]["example_steps"]
+
+
+def test_stable_mastery_can_go_straight_to_practice():
+    progress = {"attempts": 8, "mastery": 0.88, "last_error_type": None}
+    assert select_teaching_mode(progress, 0.8) == TeachingMode.PRACTICE_ONLY
+    snapshot = teacher_snapshot("multiplication.one_digit_facts", progress)
+    assert snapshot["lesson"] is None
 
 
 def test_lesson_has_teaching_structure():
