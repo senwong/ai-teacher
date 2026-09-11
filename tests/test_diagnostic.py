@@ -8,7 +8,7 @@ def test_diagnostic_places_student_at_first_unmastered_skill():
         db.DB_PATH = Path(tmp) / "test.db"
         db.init_db()
 
-        from app.curriculum.grade3_math import SKILL_ORDER
+        from app.curriculum.grade3_math import ROADMAP
         from app.curriculum.roadmap import current_skill_for_student
         from app.diagnostic.service import complete_diagnostic, create_diagnostic
         from app.student.service import create_student
@@ -17,7 +17,7 @@ def test_diagnostic_places_student_at_first_unmastered_skill():
         assessment = create_diagnostic(student["id"], questions_per_skill=2)
 
         answers = {}
-        mastered = set(SKILL_ORDER[:2])
+        mastered = set(ROADMAP[:2])
         for question in assessment["questions"]:
             if question["skill_id"] in mastered:
                 answers[question["id"]] = str(question["answer"])
@@ -26,5 +26,5 @@ def test_diagnostic_places_student_at_first_unmastered_skill():
 
         completed = complete_diagnostic(assessment["id"], answers)
         assert completed["status"] == "completed"
-        assert completed["results"]["recommended_skill_id"] == SKILL_ORDER[2]
-        assert current_skill_for_student(student["id"]) == SKILL_ORDER[2]
+        assert completed["results"]["recommended_skill_id"] == ROADMAP[2]
+        assert current_skill_for_student(student["id"]) == ROADMAP[2]
