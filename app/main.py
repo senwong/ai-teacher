@@ -13,6 +13,7 @@ from app.assessment.grader import grade
 from app.curriculum.grade3_math import SKILLS
 from app.curriculum.roadmap import current_skill_for_student, roadmap_for_student
 from app.db.sqlite import connect, init_db
+from app.diagnostic.service import complete_diagnostic, create_diagnostic, get_diagnostic, latest_diagnostic
 from app.session.service import create_session, finish_session, get_session, list_sessions
 from app.student.model import get_progress, update_progress
 from app.student.service import create_student, get_student, list_students, student_stats
@@ -84,7 +85,35 @@ def student_detail(request: Request, student_id: int):
         "current_skill": SKILLS[current_skill_id],
         "current_skill_id": current_skill_id,
         "progress": get_progress(student_id, current_skill_id),
+        "diagnostic": latest_diagnostic(student_id),
     })
+
+@app.post("/students/{student_id}/diagnostics")
+def start_diagnostic(student_id: int):
+    require_student(student_id)
+    assessment = create_diagnostic(student_id)
+    return RedirectResponse(f"/students/{student_id}/diagnostics/{assessment['id']}", status_code=303)
+
+@app.get("/students/{student_id}/diagnostics/{assessment_id}", response_class=HTMLResponse)
+def diagnostic_page(request: Request, student_id: int, assessment_id: str):
+    student = require_student(student_id)
+    assessment = get_diagnostic(assessment_id)
+    if not assessment or assessment["student_id"] != student_id:
+        raise HTTPException(404, "Diagnostic assessment not found")
+    if assessment["status"] == "completed":
+        return templates.TemplateResponse("diagnostic_result.html", {"request": request, "student": student, "assessment": assessment})
+    return templates.TemplateResponse("diagnostic.html", {"request": request, "student": student, "assessment": assessment, "skills": SKILLS})
+
+@app.post("/students/{student_id}/diagnostics/{assessment_id}/submit", response_class=HTMLResponse)
+async def submit_diagnostic(request: Request, student_id: int, assessment_id: str):
+    student = require_student(student_id)
+    assessment = get_diagnostic(assessment_id)
+    if not assessment or assessment["student_id"] != student_id:
+        raise HTTPException(404, "Diagnostic assessment not found")
+    form = await request.form()
+    answers = {q["id"]: str(form.get(q["id"], "")) for q in assessment["questions"]}
+    completed = complete_diagnostic(assessment_id, answers)
+    return templates.TemplateResponse("diagnostic_result.html", {"request": request, "student": student, "assessment": completed})
 
 @app.post("/students/{student_id}/sessions")
 def start_session(student_id: int):
@@ -189,4 +218,5 @@ async def submit(request: Request, student_id: int, session_id: str):
 def api_student(student_id: int):
     student=require_student(student_id)
     skill_id=current_skill_for_student(student_id)
-    return {"student":student,"current_skill":skill_id,"progress":get_progress(student_id,skill_id),"roadmap":roadmap_for_student(student_id),"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
+    diagnostic = latest_diagnostic(student_id)
+    return {"student":student,"current_skill":skill_id,"progress":get_progress(student_id,skill_id),"roadmap":roadmap_for_student(student_id),"diagnostic":diagnostic,"stats":student_stats(student_id),"sessions":list_sessions(student_id)}
