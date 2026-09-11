@@ -1,6 +1,6 @@
 from app.db.sqlite import connect
 from app.curriculum.grade3_math import DEFAULT_SKILL_ID
-from app.student.access import generate_pin, set_student_pin
+from app.student.access import generate_login_code, generate_pin, set_student_pin
 
 
 def create_student(name: str, grade: int, classroom_id: int | None = None) -> dict:
@@ -15,7 +15,11 @@ def create_student(name: str, grade: int, classroom_id: int | None = None) -> di
             (classroom_id, name),
         ).fetchone():
             raise ValueError("同一班级内学生姓名不能重复")
-        cur = conn.execute("INSERT INTO students(name, grade, classroom_id) VALUES (?, ?, ?)", (name, grade, classroom_id))
+        login_code = generate_login_code()
+        cur = conn.execute(
+            "INSERT INTO students(name, grade, classroom_id, login_code) VALUES (?, ?, ?, ?)",
+            (name, grade, classroom_id, login_code),
+        )
         row = conn.execute("SELECT * FROM students WHERE id = ?", (cur.lastrowid,)).fetchone()
     student = dict(row)
     pin = generate_pin()
