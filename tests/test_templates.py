@@ -17,3 +17,9 @@ def test_teacher_student_profile_has_no_learning_entry():
     assert "开始今天的学习" not in content
     assert "/students/{{ student.id }}/sessions" not in content
     assert "重置登录 PIN" in content
+
+
+def test_student_home_posts_to_learn_start():
+    content = Path("app/templates/student_home.html").read_text()
+    assert 'action="/learn/start"' in content
+    assert 'action="/student/start"' not in content
