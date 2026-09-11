@@ -13,7 +13,8 @@
   const replayButton = root.querySelector('[data-speech-replay]');
   const submitButton = root.querySelector('[data-chat-submit]');
   const suggestionButtons = root.querySelectorAll('[data-chat-suggestion]');
-  const initialSpeech = root.dataset.initialSpeech || '';
+  const teachingContent = document.querySelector('[data-teaching-content]');
+  const initialSpeech = teachingContent ? teachingContent.innerText.trim() : '';
 
   let lastSpokenText = '';
   let recognition = null;
